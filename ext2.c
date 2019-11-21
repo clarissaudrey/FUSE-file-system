@@ -31,7 +31,20 @@
 volume_t *open_volume_file(const char *filename) {
   
   /* TO BE COMPLETED BY THE STUDENT */
-  return NULL;
+  volume_t *volume;
+  volume = fopen(filename,"rd");
+  volume->fd = open(filename,O_RDONLY);
+  if (volume->fd == -1) return NULL; // ERROR HANDLING
+  struct stat buffer;
+  if (fstat(volume->fd,&buffer) == -1 ) return NULL; // ERROR HANDLING
+  volume->volume_size = buffer.st_size;
+  volume->block_size = buffer.st_blksize;
+
+  // superblock
+  // dt
+
+
+  return volume;
 }
 
 /* close_volume_file: Frees and closes all resources used by a EXT2 volume.
@@ -41,6 +54,8 @@ volume_t *open_volume_file(const char *filename) {
  */
 void close_volume_file(volume_t *volume) {
 
+
+  return fclose(volume);
   /* TO BE COMPLETED BY THE STUDENT */
 }
 
@@ -64,7 +79,8 @@ void close_volume_file(volume_t *volume) {
 ssize_t read_block(volume_t *volume, uint32_t block_no, uint32_t offset, uint32_t size, void *buffer) {
 
   /* TO BE COMPLETED BY THE STUDENT */
-  return -1;
+
+  return   pread(volume->fd, buffer,size,offset);
 }
 
 /* read_inode: Fills an inode data structure with the data from one
