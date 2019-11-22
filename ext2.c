@@ -31,7 +31,7 @@
 volume_t *open_volume_file(const char *filename) {
   
   /* TO BE COMPLETED BY THE STUDENT */
-  volume_t *volume;
+  volume_t *volume = malloc(sizeof(volume_t));
   volume->fd = open(filename, O_RDONLY);
   if (volume->fd == -1) 
     return NULL; // ERROR HANDLING
