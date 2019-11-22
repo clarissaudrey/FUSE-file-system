@@ -31,15 +31,18 @@
 volume_t *open_volume_file(const char *filename) {
   
   /* TO BE COMPLETED BY THE STUDENT */
-  volume_t *volume = malloc(sizeof(volume_t));
+  volume_t *volume;
   volume->fd = open(filename, O_RDONLY);
   if (volume->fd == -1) 
     return NULL; // ERROR HANDLING
 
   int superblk_res;
-  superblk_res = pread(volume->fd, &volume->super, sizeof(superblock_t), EXT2_OFFSET_SUPERBLOCK);
+  superblock_t superblk;
+  superblk = malloc(sizeof((void *)superblock_t));
+  superblk_res = pread(volume->fd, &superblk, sizeof(superblock_t), EXT2_OFFSET_SUPERBLOCK);
   if (superblk_res == -1)
     return NULL; // ERROR HANDLING
+  volume->super = superblk;
   
   struct stat buffer;
   if (fstat(volume->fd, &buffer) == -1) 
@@ -49,14 +52,17 @@ volume_t *open_volume_file(const char *filename) {
   volume->num_groups = (volume->super.s_blocks_count-1) / volume->super.s_blocks_per_group + 1;
 
   int groupRes;
+  group_desc_t *groups;
+  groups = malloc(sizeof(group_desc_t));
   if (volume->block_size == 1024) {
-    groupRes = pread(volume->fd, volume->groups, sizeof(group_desc_t), volume->block_size*2);
+    groupRes = pread(volume->fd, groups, sizeof(group_desc_t), volume->block_size*2);
   } 
   else {
-    groupRes = pread(volume->fd, volume->groups, sizeof(group_desc_t), volume->block_size);
+    groupRes = pread(volume->fd, groups, sizeof(group_desc_t), volume->block_size);
   }
   if (groupRes == -1)
     return NULL; // ERROR HANDLING
+  volume->groups = groups;
 
   return volume;
 }
@@ -70,7 +76,6 @@ void close_volume_file(volume_t *volume) {
   
   /* TO BE COMPLETED BY THE STUDENT */
   close(volume->fd);
-  free(volume);
 }
 
 /* read_block: Reads data from one or more blocks. Saves the resulting
