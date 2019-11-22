@@ -29,34 +29,47 @@
      volume file system (s_magic does not contain the correct value).
  */
 volume_t *open_volume_file(const char *filename) {
-  
+
+
   /* TO BE COMPLETED BY THE STUDENT */
-  volume_t *volume = malloc(sizeof(volume_t));
+  volume_t *volume = fopen(filename,"rd");
   volume->fd = open(filename, O_RDONLY);
-  if (volume->fd == -1) 
-    return NULL; // ERROR HANDLING
+  if (volume->fd == -1) {
+      return NULL; // ERROR HANDLING
+  }
+
 
   int superblk_res;
   superblk_res = pread(volume->fd, &volume->super, sizeof(superblock_t), EXT2_OFFSET_SUPERBLOCK);
-  if (superblk_res == -1)
-    return NULL; // ERROR HANDLING
-  
+  if (superblk_res == -1){
+      return NULL; // ERROR HANDLING
+  }
+
   struct stat buffer;
-  if (fstat(volume->fd, &buffer) == -1) 
-    return NULL; // ERROR HANDLING
+  if (fstat(volume->fd, &buffer) == -1) {
+      return NULL; // ERROR HANDLING
+  }
   volume->volume_size = buffer.st_size;
   volume->block_size = 1024 << volume->super.s_log_block_size;
   volume->num_groups = (volume->super.s_blocks_count-1) / volume->super.s_blocks_per_group + 1;
 
+
   int groupRes;
+  group_desc_t * groups;
+  groups = malloc(sizeof(group_desc_t));
   if (volume->block_size == 1024) {
-    groupRes = pread(volume->fd, volume->groups, sizeof(group_desc_t), volume->block_size*2);
-  } 
-  else {
-    groupRes = pread(volume->fd, volume->groups, sizeof(group_desc_t), volume->block_size);
+    groupRes = pread(volume->fd, groups, sizeof(group_desc_t), volume->block_size*2);
   }
-  if (groupRes == -1)
-    return NULL; // ERROR HANDLING
+  else {
+    groupRes = pread(volume->fd, groups, sizeof(group_desc_t), volume->block_size);
+  }
+  if (groupRes == -1){
+      return NULL; // ERROR HANDLING
+  }
+  volume->groups = groups;
+
+    free(groups);
+
 
   return volume;
 }
@@ -70,7 +83,6 @@ void close_volume_file(volume_t *volume) {
   
   /* TO BE COMPLETED BY THE STUDENT */
   close(volume->fd);
-  free(volume);
 }
 
 /* read_block: Reads data from one or more blocks. Saves the resulting
