@@ -16,8 +16,8 @@
 #define EXT2_INVALID_BLOCK_NUMBER ((uint32_t) -1)
 
 /* open_volume_file: Opens the specified file and reads the initial
-   EXT2 data contained in the file, including the boot sector, file
-   allocation table and root directory.
+   EXT2 data contained in the file, including the boot sector and 
+   group descriptor table.
    
    Parameters:
      filename: Name of the file containing the volume data.
@@ -32,17 +32,31 @@ volume_t *open_volume_file(const char *filename) {
   
   /* TO BE COMPLETED BY THE STUDENT */
   volume_t *volume;
-  volume = fopen(filename,"rd");
-  volume->fd = open(filename,O_RDONLY);
-  if (volume->fd == -1) return NULL; // ERROR HANDLING
+  volume->fd = open(filename, O_RDONLY);
+  if (volume->fd == -1) 
+    return NULL; // ERROR HANDLING
+
+  int superblk_res;
+  superblk_res = pread(volume->fd, &volume->super, sizeof(superblock_t), EXT2_OFFSET_SUPERBLOCK);
+  if (superblk_res == -1)
+    return NULL; // ERROR HANDLING
+  
   struct stat buffer;
-  if (fstat(volume->fd,&buffer) == -1 ) return NULL; // ERROR HANDLING
+  if (fstat(volume->fd, &buffer) == -1) 
+    return NULL; // ERROR HANDLING
   volume->volume_size = buffer.st_size;
-  volume->block_size = buffer.st_blksize;
+  volume->block_size = 1024 << volume->super.s_log_block_size;
+  volume->num_groups = (volume->super.s_blocks_count-1) / volume->super.s_blocks_per_group + 1;
 
-  // superblock
-  // dt
-
+  int groupRes;
+  if (volume->block_size == 1024) {
+    groupRes = pread(volume->fd, volume->groups, sizeof(group_desc_t), volume->block_size*2);
+  } 
+  else {
+    groupRes = pread(volume->fd, volume->groups, sizeof(group_desc_t), volume->block_size);
+  }
+  if (groupRes == -1)
+    return NULL; // ERROR HANDLING
 
   return volume;
 }
@@ -53,10 +67,10 @@ volume_t *open_volume_file(const char *filename) {
      volume: pointer to volume to be freed.
  */
 void close_volume_file(volume_t *volume) {
-
-
-  return fclose(volume);
+  
   /* TO BE COMPLETED BY THE STUDENT */
+  close(volume->fd);
+  free(volume);
 }
 
 /* read_block: Reads data from one or more blocks. Saves the resulting
@@ -79,8 +93,7 @@ void close_volume_file(volume_t *volume) {
 ssize_t read_block(volume_t *volume, uint32_t block_no, uint32_t offset, uint32_t size, void *buffer) {
 
   /* TO BE COMPLETED BY THE STUDENT */
-
-  return   pread(volume->fd, buffer,size,offset);
+  return pread(volume->fd, buffer, size, offset);
 }
 
 /* read_inode: Fills an inode data structure with the data from one
