@@ -16,8 +16,8 @@
 #define EXT2_INVALID_BLOCK_NUMBER ((uint32_t) -1)
 
 /* open_volume_file: Opens the specified file and reads the initial
-   EXT2 data contained in the file, including the boot sector, file
-   allocation table and root directory.
+   EXT2 data contained in the file, including the boot sector and 
+   group descriptor table.
    
    Parameters:
      filename: Name of the file containing the volume data.
@@ -31,7 +31,45 @@
 volume_t *open_volume_file(const char *filename) {
   
   /* TO BE COMPLETED BY THE STUDENT */
-  return NULL;
+  volume_t *volume = fopen(filename,"rd");
+  volume->fd = open(filename, O_RDONLY);
+  if (volume->fd == -1) {
+      return NULL; // ERROR HANDLING
+  }
+
+
+  int superblk_res;
+  superblk_res = pread(volume->fd, &volume->super, sizeof(superblock_t), EXT2_OFFSET_SUPERBLOCK);
+  if (superblk_res == -1 || volume->super.s_magic != EXT2_SUPER_MAGIC) {
+      return NULL; // ERROR HANDLING
+  }
+
+  struct stat buffer;
+  if (fstat(volume->fd, &buffer) == -1) {
+      return NULL; // ERROR HANDLING
+  }
+  volume->volume_size = buffer.st_size;
+  volume->block_size = 1024 << volume->super.s_log_block_size;
+  volume->num_groups = (volume->super.s_blocks_count-1) / volume->super.s_blocks_per_group + 1;
+
+
+  int groupRes;
+  group_desc_t * groups;
+  groups = malloc(sizeof(group_desc_t));
+  if (volume->block_size == 1024) {
+    groupRes = pread(volume->fd, groups, sizeof(group_desc_t), volume->block_size*2);
+  }
+  else {
+    groupRes = pread(volume->fd, groups, sizeof(group_desc_t), volume->block_size);
+  }
+  if (groupRes == -1){
+      return NULL; // ERROR HANDLING
+  }
+  volume->groups = groups;
+  free(groups);
+
+
+  return volume;
 }
 
 /* close_volume_file: Frees and closes all resources used by a EXT2 volume.
@@ -40,8 +78,9 @@ volume_t *open_volume_file(const char *filename) {
      volume: pointer to volume to be freed.
  */
 void close_volume_file(volume_t *volume) {
-
+  
   /* TO BE COMPLETED BY THE STUDENT */
+  close(volume->fd);
 }
 
 /* read_block: Reads data from one or more blocks. Saves the resulting
@@ -64,7 +103,8 @@ void close_volume_file(volume_t *volume) {
 ssize_t read_block(volume_t *volume, uint32_t block_no, uint32_t offset, uint32_t size, void *buffer) {
 
   /* TO BE COMPLETED BY THE STUDENT */
-  return -1;
+  uint32_t blockOffset = block_no * volume->block_size + offset;
+  return (uint32_t)pread(volume->fd, buffer, size, blockOffset);
 }
 
 /* read_inode: Fills an inode data structure with the data from one
@@ -85,7 +125,11 @@ ssize_t read_block(volume_t *volume, uint32_t block_no, uint32_t offset, uint32_
 ssize_t read_inode(volume_t *volume, uint32_t inode_no, inode_t *buffer) {
   
   /* TO BE COMPLETED BY THE STUDENT */
-  return -1;
+  uint32_t blockGroup = (inode_no - 1) / volume->super.s_inodes_per_group;
+  uint32_t index = (inode_no - 1) % volume->super.s_inodes_per_group;
+  uint32_t offset = index * sizeof(uint32_t);
+  //uint32_t containing_block = (index * volume->super.s_inode_size) / volume->block_size;
+  return read_block(volume, volume->groups[blockGroup].bg_inode_table, offset, sizeof(inode_t), (void *)buffer);
 }
 
 /* read_ind_block_entry: Reads one entry from an indirect
@@ -101,11 +145,17 @@ ssize_t read_inode(volume_t *volume, uint32_t inode_no, inode_t *buffer) {
      corresponding entry. In case of error, returns
      EXT2_INVALID_BLOCK_NUMBER.
  */
-static uint32_t read_ind_block_entry(volume_t *volume, uint32_t ind_block_no,
-				     uint32_t index) {
+static uint32_t read_ind_block_entry(volume_t *volume, uint32_t ind_block_no, uint32_t index) {
   
   /* TO BE COMPLETED BY THE STUDENT */
-  return 0;
+  if (ind_block_no > volume->super.s_blocks_count)
+    return EXT2_INVALID_BLOCK_NUMBER;
+  uint32_t offset = index * sizeof(u_int32_t);
+  uint32_t *temp;
+  int result = read_block(volume, ind_block_no, offset, sizeof(u_int32_t), (void *)temp);
+  if (result == -1)
+    return EXT2_INVALID_BLOCK_NUMBER;
+  return *temp;
 }
 
 /* read_inode_block_no: Returns the block number containing the data
