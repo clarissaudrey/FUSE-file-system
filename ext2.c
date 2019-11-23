@@ -189,7 +189,13 @@ static uint32_t get_inode_block_no(volume_t *volume, inode_t *inode, uint64_t bl
 ssize_t read_file_block(volume_t *volume, inode_t *inode, uint64_t offset, uint64_t max_size, void *buffer) {
     
   /* TO BE COMPLETED BY THE STUDENT */
-  return -1;
+  if (max_size>volume->block_size) { // TODO double check this line
+    return -1;
+  } else {
+    return pread(volume->fd,buffer,?, offset);
+    // TODO SIZE FROM INODE???
+  }
+
 }
 
 /* read_file_content: Returns the content of a specific file, limited
@@ -256,6 +262,7 @@ uint32_t follow_directory_entries(volume_t *volume, inode_t *inode, void *contex
 				  int (*f)(const char *name, uint32_t inode_no, void *context)) {
 
   /* TO BE COMPLETED BY THE STUDENT */
+  compare_file_name(*name, inode_no, *context);
   return 0;
 }
 
