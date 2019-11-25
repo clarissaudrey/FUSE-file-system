@@ -150,7 +150,7 @@ ssize_t read_inode(volume_t *volume, uint32_t inode_no, inode_t *buffer) {
 static uint32_t read_ind_block_entry(volume_t *volume, uint32_t ind_block_no, uint32_t index) {
   
   /* TO BE COMPLETED BY THE STUDENT */
-  if (ind_block_no > volume->super.s_blocks_count)
+  if (ind_block_no > volume->super.s_blocks_count || index > ((volume->block_size/sizeof(uint32_t))-1))
     return EXT2_INVALID_BLOCK_NUMBER;
   uint32_t offset = index * sizeof(u_int32_t);
   uint32_t *temp;
@@ -179,20 +179,26 @@ static uint32_t read_ind_block_entry(volume_t *volume, uint32_t ind_block_no, ui
 static uint32_t get_inode_block_no(volume_t *volume, inode_t *inode, uint64_t block_idx) {
   
   /* TO BE COMPLETED BY THE STUDENT */
-  if (block_idx>=0 && block_idx<=11) {
+  if (block_idx>=0 && block_idx<12) { // Direct block
     return inode->i_block[block_idx];
     }
   u_int32_t size_1ind = volume->block_size / sizeof(u_int32_t);
-  if (block_idx>11 && block_idx<size_1ind) {
+  if (block_idx>=12 && block_idx<size_1ind+12) { // 1-indirect block
     return read_ind_block_entry(volume, inode->i_block_1ind, block_idx-12);
   }
-  u_int32_t size_2ind = size_1ind * volume->block_size;
-  if (block_idx>=size_1ind && block_idx<size_2ind) {
-    return read_ind_block_entry(volume, inode->i_block_2ind, block_idx-size_1ind-12);
+  u_int32_t size_2ind = size_1ind * size_1ind;
+  if (block_idx>=size_1ind+12 && block_idx<size_2ind+size_1ind+12) { // 2-indirect block
+    u_int32_t offset_for_2ind = (block_idx - (12+size_1ind)) / size_1ind;
+    u_int32_t temp2 = read_ind_block_entry(volume, inode->i_block_2ind, offset_for_2ind);
+    return read_ind_block_entry(volume, temp2, (u_int32_t)block_idx % size_1ind);
   }
-  u_int32_t size_3ind = size_1ind * size_1ind * volume->block_size;
-  if (block_idx>=size_2ind && block_idx<size_3ind) {
-    return read_ind_block_entry(volume, inode->i_block_3ind, block_idx-size_2ind-size_1ind-12);
+  u_int32_t size_3ind = size_1ind * size_1ind * size_1ind;
+  if (block_idx>=size_2ind+size_1ind+12 && block_idx<size_3ind+size_2ind+size_1ind+12) { // 3-indirect block
+    u_int32_t offset_for_3ind = (block_idx - (12+size_1ind+size_2ind)) / size_2ind;
+    u_int32_t temp3 = read_ind_block_entry(volume, inode->i_block_3ind, offset_for_3ind);
+    u_int32_t offset_for_2ind = (block_idx - (12+size_1ind+size_2ind)) / size_1ind;
+    u_int32_t temp2 = read_ind_block_entry(volume, temp3, offset_for_2ind);
+    return read_ind_block_entry(volume, temp2, (u_int32_t)block_idx % size_1ind);
   }
   return EXT2_INVALID_BLOCK_NUMBER;
 }
