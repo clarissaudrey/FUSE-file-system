@@ -31,7 +31,7 @@
 volume_t *open_volume_file(const char *filename) {
   
   /* TO BE COMPLETED BY THE STUDENT */
-  volume_t *volume = fopen(filename,"rd");
+  volume_t *volume = malloc(sizeof(volume_t));
   volume->fd = open(filename, O_RDONLY);
   if (volume->fd == -1) {
       return NULL; // ERROR HANDLING
@@ -81,6 +81,7 @@ void close_volume_file(volume_t *volume) {
   
   /* TO BE COMPLETED BY THE STUDENT */
   close(volume->fd);
+  free(volume);
 }
 
 /* read_block: Reads data from one or more blocks. Saves the resulting
@@ -104,7 +105,7 @@ ssize_t read_block(volume_t *volume, uint32_t block_no, uint32_t offset, uint32_
 
   /* TO BE COMPLETED BY THE STUDENT */
   uint32_t blockOffset = block_no * volume->block_size + offset;
-  return (uint32_t)pread(volume->fd, buffer, size, blockOffset);
+  return pread(volume->fd, buffer, size, blockOffset);
 }
 
 /* read_inode: Fills an inode data structure with the data from one
@@ -129,7 +130,7 @@ ssize_t read_inode(volume_t *volume, uint32_t inode_no, inode_t *buffer) {
   uint32_t index = (inode_no - 1) % volume->super.s_inodes_per_group;
   uint32_t offset = index * sizeof(uint32_t);
   //uint32_t containing_block = (index * volume->super.s_inode_size) / volume->block_size;
-  return read_block(volume, volume->groups[blockGroup].bg_inode_table, offset, sizeof(inode_t), (void *)buffer);
+  return read_block(volume, volume->groups[blockGroup].bg_inode_table, offset, volume->super.s_inode_size, (void *)buffer);
 }
 
 /* read_ind_block_entry: Reads one entry from an indirect
@@ -148,14 +149,16 @@ ssize_t read_inode(volume_t *volume, uint32_t inode_no, inode_t *buffer) {
 static uint32_t read_ind_block_entry(volume_t *volume, uint32_t ind_block_no, uint32_t index) {
   
   /* TO BE COMPLETED BY THE STUDENT */
-  if (ind_block_no > volume->super.s_blocks_count)
+  if (ind_block_no > volume->super.s_blocks_count || index > volume->block_size-1)
     return EXT2_INVALID_BLOCK_NUMBER;
   uint32_t offset = index * sizeof(u_int32_t);
-  uint32_t *temp;
+  uint32_t *temp = malloc(sizeof(u_int32_t));
   int result = read_block(volume, ind_block_no, offset, sizeof(u_int32_t), (void *)temp);
   if (result == -1)
     return EXT2_INVALID_BLOCK_NUMBER;
-  return *temp;
+  uint32_t *retVal = temp;
+  free(temp);
+  return *retVal;
 }
 
 /* read_inode_block_no: Returns the block number containing the data
@@ -177,6 +180,27 @@ static uint32_t read_ind_block_entry(volume_t *volume, uint32_t ind_block_no, ui
 static uint32_t get_inode_block_no(volume_t *volume, inode_t *inode, uint64_t block_idx) {
   
   /* TO BE COMPLETED BY THE STUDENT */
+  if (block_idx>=0 && block_idx<12) { // Direct block
+    return inode->i_block[block_idx];
+    }
+  u_int32_t size_1ind = volume->block_size / sizeof(u_int32_t);
+  if (block_idx>=12 && block_idx<size_1ind+12) { // 1-indirect block
+    return read_ind_block_entry(volume, inode->i_block_1ind, block_idx-12);
+  }
+  u_int32_t size_2ind = size_1ind * size_1ind;
+  if (block_idx>=size_1ind+12 && block_idx<size_2ind+size_1ind+12) { // 2-indirect block
+    u_int32_t offset_for_2ind = (block_idx - (12+size_1ind)) / size_1ind;
+    u_int32_t temp2 = read_ind_block_entry(volume, inode->i_block_2ind, offset_for_2ind);
+    return read_ind_block_entry(volume, temp2, (u_int32_t)block_idx % size_1ind);
+  }
+  u_int32_t size_3ind = size_1ind * size_1ind * size_1ind;
+  if (block_idx>=size_2ind+size_1ind+12 && block_idx<size_3ind+size_2ind+size_1ind+12) { // 3-indirect block
+    u_int32_t offset_for_3ind = (block_idx - (12+size_1ind+size_2ind)) / size_2ind;
+    u_int32_t temp3 = read_ind_block_entry(volume, inode->i_block_3ind, offset_for_3ind);
+    u_int32_t offset_for_2ind = (block_idx - (12+size_1ind+size_2ind)) / size_1ind;
+    u_int32_t temp2 = read_ind_block_entry(volume, temp3, offset_for_2ind);
+    return read_ind_block_entry(volume, temp2, (u_int32_t)block_idx % size_1ind);
+  }
   return EXT2_INVALID_BLOCK_NUMBER;
 }
 
@@ -198,7 +222,12 @@ static uint32_t get_inode_block_no(volume_t *volume, inode_t *inode, uint64_t bl
 ssize_t read_file_block(volume_t *volume, inode_t *inode, uint64_t offset, uint64_t max_size, void *buffer) {
     
   /* TO BE COMPLETED BY THE STUDENT */
-  return -1;
+  uint64_t size = volume->block_size - (offset % volume->block_size);
+  if (size > max_size) {
+    size = max_size;
+  }
+  uint32_t block_no = get_inode_block_no(volume, inode, offset / volume->block_size);
+  return read_block(volume, block_no, offset % volume->block_size, size, buffer);
 }
 
 /* read_file_content: Returns the content of a specific file, limited
@@ -265,6 +294,30 @@ uint32_t follow_directory_entries(volume_t *volume, inode_t *inode, void *contex
 				  int (*f)(const char *name, uint32_t inode_no, void *context)) {
 
   /* TO BE COMPLETED BY THE STUDENT */
+  int offset = 0;
+  dir_entry_t * temp = malloc(sizeof(dir_entry_t));
+  int f_output = 0;
+  while (offset < inode_file_size(volume,inode) && f_output==0) {
+    if (read_file_content(volume,inode,offset, sizeof(dir_entry_t),temp)<0) {
+        free(temp);
+        return 0;
+    }
+    char *tempName = malloc((temp->de_name_len + 2) * sizeof(char));
+    strcpy(tempName, temp->de_name);
+    tempName[temp->de_name_len] = "\0";
+    f_output = (*f)(tempName,temp->de_inode_no,context);
+    free(tempName);
+    if (f_output != 0) {
+        if (buffer!=NULL ) {
+            read_file_content(volume,inode,offset, sizeof(dir_entry_t),temp);
+        }
+        int de_inode_no = temp->de_inode_no;
+        free(temp);
+        return de_inode_no;
+    }
+    offset += temp->de_rec_len;
+  }
+  free (temp);
   return 0;
 }
 
