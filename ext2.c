@@ -140,9 +140,9 @@ ssize_t read_inode(volume_t *volume, uint32_t inode_no, inode_t *buffer) {
 
   uint32_t blockGroup = (inode_no - 1) / volume->super.s_inodes_per_group;
   uint32_t index = (inode_no - 1) % volume->super.s_inodes_per_group;
-  uint32_t offset = index * sizeof(uint32_t);
+  uint32_t offset = index * volume->super.s_inode_size;
   //uint32_t containing_block = (index * volume->super.s_inode_size) / volume->block_size;
-  return read_block(volume, volume->groups[blockGroup].bg_inode_table, offset, sizeof(inode_t), (void *)buffer);
+  return read_block(volume, volume->groups[blockGroup].bg_inode_table, offset, volume->super.s_inode_size, (void *)buffer);
 }
 
 /* read_ind_block_entry: Reads one entry from an indirect
@@ -304,9 +304,7 @@ uint32_t follow_directory_entries(volume_t *volume, inode_t *inode, void *contex
   int offset = 0;
   dir_entry_t * temp = malloc(sizeof(dir_entry_t));
   int f_output = 0;
-    printf("DEBUG INODE FILE SIZE: %ld \n", inode_file_size(volume,inode));
-  while (offset < inode_file_size(volume,inode) && f==0) {
-    printf("DEBUG DE WHILE LOOP \n");
+  while (offset < inode_file_size(volume,inode) && f_output==0) {
       if (read_file_content(volume,inode,offset, sizeof(dir_entry_t),temp) <0) {
           free(temp);
           return 0;
