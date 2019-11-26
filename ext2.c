@@ -12,12 +12,16 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+
 #define EXT2_OFFSET_SUPERBLOCK 1024
 #define EXT2_INVALID_BLOCK_NUMBER ((uint32_t) -1)
 
+// Global variable
+group_desc_t * groups;
+
 /* open_volume_file: Opens the specified file and reads the initial
-   EXT2 data contained in the file, including the boot sector, file
-   allocation table and root directory.
+   EXT2 data contained in the file, including the boot sector and
+   group descriptor table.
    
    Parameters:
      filename: Name of the file containing the volume data.
@@ -31,7 +35,43 @@
 volume_t *open_volume_file(const char *filename) {
   
   /* TO BE COMPLETED BY THE STUDENT */
-  return NULL;
+  volume_t *volume = malloc(sizeof(volume_t));
+  volume->fd = open(filename, O_RDONLY);
+  if (volume->fd == -1) {
+      return NULL; // ERROR HANDLING
+  }
+
+
+  int superblk_res;
+  superblk_res = pread(volume->fd, &volume->super, sizeof(superblock_t), EXT2_OFFSET_SUPERBLOCK);
+  if (superblk_res == -1 || volume->super.s_magic != EXT2_SUPER_MAGIC) {
+      return NULL; // ERROR HANDLING
+  }
+
+  struct stat buffer;
+  if (fstat(volume->fd, &buffer) == -1) {
+      return NULL; // ERROR HANDLING
+  }
+  volume->volume_size = buffer.st_size;
+  volume->block_size = 1024 << volume->super.s_log_block_size;
+  volume->num_groups = (volume->super.s_blocks_count-1) / volume->super.s_blocks_per_group + 1;
+
+
+  int groupRes;
+  groups = malloc(sizeof(group_desc_t));
+  if (volume->block_size == 1024) {
+    groupRes = pread(volume->fd, groups, sizeof(group_desc_t), volume->block_size*2);
+  }
+  else {
+    groupRes = pread(volume->fd, groups, sizeof(group_desc_t), volume->block_size);
+  }
+  if (groupRes == -1){
+      return NULL; // ERROR HANDLING
+  }
+  volume->groups = groups;
+  free(groups);
+
+  return volume;
 }
 
 /* close_volume_file: Frees and closes all resources used by a EXT2 volume.
@@ -42,6 +82,10 @@ volume_t *open_volume_file(const char *filename) {
 void close_volume_file(volume_t *volume) {
 
   /* TO BE COMPLETED BY THE STUDENT */
+  groups = NULL;
+  free(groups);
+  close(volume->fd);
+  free(volume);
 }
 
 /* read_block: Reads data from one or more blocks. Saves the resulting
@@ -64,7 +108,13 @@ void close_volume_file(volume_t *volume) {
 ssize_t read_block(volume_t *volume, uint32_t block_no, uint32_t offset, uint32_t size, void *buffer) {
 
   /* TO BE COMPLETED BY THE STUDENT */
-  return -1;
+  if (block_no == 0) {
+    memset(buffer, 0, sizeof(*buffer));
+    return -1;
+  }
+  uint32_t blockOffset = block_no * volume->block_size + offset;
+  //printf ( "DEBUG blockOffset = %d \n", blockOffset);
+  return pread(volume->fd, buffer, size, blockOffset);
 }
 
 /* read_inode: Fills an inode data structure with the data from one
@@ -85,7 +135,24 @@ ssize_t read_block(volume_t *volume, uint32_t block_no, uint32_t offset, uint32_
 ssize_t read_inode(volume_t *volume, uint32_t inode_no, inode_t *buffer) {
   
   /* TO BE COMPLETED BY THE STUDENT */
-  return -1;
+  if (inode_no == 0) {
+    return read_block(volume,inode_no,0,0,buffer);
+  }
+
+  uint32_t blockGroup = (inode_no - 1) / volume->super.s_inodes_per_group;
+  uint32_t index = (inode_no - 1) % volume->super.s_inodes_per_group;
+  uint32_t size = volume->super.s_inode_size;
+  uint32_t offset = index * size;
+  uint32_t block_no = volume->groups[blockGroup].bg_inode_table;
+  
+
+  printf ( "DEBUG block_no = %d \n", block_no);
+  //printf("DEBUG blockGroup = %d \n", blockGroup);
+  //printf("DEBUG index = %d \n", index);
+  //printf("DEBUG offset = %d \n", offset);
+  //uint32_t containing_block = (index * volume->super.s_inode_size) / volume->block_size;
+  //printf("DEBUG read block = %ld \n", read_block(volume, volume->groups[blockGroup].bg_inode_table, offset, volume->super.s_inode_size, (void *)buffer));
+  return read_block(volume, block_no, offset, size, (void *)buffer);
 }
 
 /* read_ind_block_entry: Reads one entry from an indirect
@@ -101,11 +168,19 @@ ssize_t read_inode(volume_t *volume, uint32_t inode_no, inode_t *buffer) {
      corresponding entry. In case of error, returns
      EXT2_INVALID_BLOCK_NUMBER.
  */
-static uint32_t read_ind_block_entry(volume_t *volume, uint32_t ind_block_no,
-				     uint32_t index) {
+static uint32_t read_ind_block_entry(volume_t *volume, uint32_t ind_block_no, uint32_t index) {
   
   /* TO BE COMPLETED BY THE STUDENT */
-  return 0;
+  if (ind_block_no > volume->super.s_blocks_count || index > volume->block_size-1)
+    return EXT2_INVALID_BLOCK_NUMBER;
+  uint32_t offset = index * sizeof(u_int32_t);
+  uint32_t *temp = malloc(sizeof(u_int32_t));
+  int result = read_block(volume, ind_block_no, offset, sizeof(u_int32_t), (void *)temp);
+  if (result == -1)
+    return EXT2_INVALID_BLOCK_NUMBER;
+  uint32_t *retVal = temp;
+  free(temp);
+  return *retVal;
 }
 
 /* read_inode_block_no: Returns the block number containing the data
@@ -127,6 +202,27 @@ static uint32_t read_ind_block_entry(volume_t *volume, uint32_t ind_block_no,
 static uint32_t get_inode_block_no(volume_t *volume, inode_t *inode, uint64_t block_idx) {
   
   /* TO BE COMPLETED BY THE STUDENT */
+  if (block_idx>=0 && block_idx<12) { // Direct block
+    return inode->i_block[block_idx];
+    }
+  u_int32_t size_1ind = volume->block_size / sizeof(u_int32_t);
+  if (block_idx>=12 && block_idx<size_1ind+12) { // 1-indirect block
+    return read_ind_block_entry(volume, inode->i_block_1ind, block_idx-12);
+  }
+  u_int32_t size_2ind = size_1ind * size_1ind;
+  if (block_idx>=size_1ind+12 && block_idx<size_2ind+size_1ind+12) { // 2-indirect block
+    u_int32_t offset_for_2ind = (block_idx - (12+size_1ind)) / size_1ind;
+    u_int32_t temp2 = read_ind_block_entry(volume, inode->i_block_2ind, offset_for_2ind);
+    return read_ind_block_entry(volume, temp2, (u_int32_t)block_idx % size_1ind);
+  }
+  u_int32_t size_3ind = size_1ind * size_1ind * size_1ind;
+  if (block_idx>=size_2ind+size_1ind+12 && block_idx<size_3ind+size_2ind+size_1ind+12) { // 3-indirect block
+    u_int32_t offset_for_3ind = (block_idx - (12+size_1ind+size_2ind)) / size_2ind;
+    u_int32_t temp3 = read_ind_block_entry(volume, inode->i_block_3ind, offset_for_3ind);
+    u_int32_t offset_for_2ind = (block_idx - (12+size_1ind+size_2ind)) / size_1ind;
+    u_int32_t temp2 = read_ind_block_entry(volume, temp3, offset_for_2ind);
+    return read_ind_block_entry(volume, temp2, (u_int32_t)block_idx % size_1ind);
+  }
   return EXT2_INVALID_BLOCK_NUMBER;
 }
 
@@ -148,7 +244,12 @@ static uint32_t get_inode_block_no(volume_t *volume, inode_t *inode, uint64_t bl
 ssize_t read_file_block(volume_t *volume, inode_t *inode, uint64_t offset, uint64_t max_size, void *buffer) {
     
   /* TO BE COMPLETED BY THE STUDENT */
-  return -1;
+  uint64_t size = volume->block_size - (offset % volume->block_size);
+  if (size > max_size) {
+    size = max_size;
+  }
+  uint32_t block_no = get_inode_block_no(volume, inode, offset / volume->block_size);
+  return read_block(volume, block_no, offset % volume->block_size, size, buffer);
 }
 
 /* read_file_content: Returns the content of a specific file, limited
@@ -215,6 +316,35 @@ uint32_t follow_directory_entries(volume_t *volume, inode_t *inode, void *contex
 				  int (*f)(const char *name, uint32_t inode_no, void *context)) {
 
   /* TO BE COMPLETED BY THE STUDENT */
+  int offset = 0;
+  dir_entry_t * temp = malloc(sizeof(dir_entry_t));
+  int f_output = 0;
+  //printf("DEBUG inode file size = %ld\n", inode_file_size(volume,inode));
+  while (offset < inode_file_size(volume,inode) && f_output==0) {
+         // printf("DEBUG INSIDE FOLLOW WHILE LOOP \n");
+      if (read_file_content(volume,inode,offset, sizeof(dir_entry_t),temp) <0) {
+          free(temp);
+          return 0;
+      }
+
+      char * tempName = malloc((temp->de_name_len + 2) * sizeof(char));
+      strcpy(tempName, temp->de_name);
+      tempName[temp->de_name_len] = "\0";
+      f_output = (*f)(tempName,temp->de_inode_no,context);
+      free(tempName);
+      if (f_output != 0) {
+          if (buffer!=NULL ) {
+              //printf("DEBUG READY TO READ FILE CONTENT \n");
+              read_file_content(volume,inode,offset, sizeof(dir_entry_t),temp);
+          }
+          int de_inode_no = temp->de_inode_no;
+          free(temp);
+          return de_inode_no;
+      }
+      offset += temp->de_rec_len;
+  }
+
+    free (temp);
   return 0;
 }
 
@@ -243,7 +373,6 @@ static int compare_file_name(const char *name, uint32_t inode_no, void *context)
      data, returns 0 (zero).
  */
 uint32_t find_file_in_directory(volume_t *volume, inode_t *inode, const char *name, dir_entry_t *buffer) {
-  
   return follow_directory_entries(volume, inode, (char *) name, buffer, compare_file_name);
 }
 
@@ -269,5 +398,84 @@ uint32_t find_file_in_directory(volume_t *volume, inode_t *inode, const char *na
 uint32_t find_file_from_path(volume_t *volume, const char *path, inode_t *dest_inode) {
 
   /* TO BE COMPLETED BY THE STUDENT */
-  return 0;
+  //printf("DEBUG AT THE BEGINING \n");
+
+  // check if the path starts with "/"
+  if (strncmp(path,"/",1)!=0){
+        //printf("DEBUG not / \n");
+        return 0;
+  }
+
+  // for root directory
+  if (strcmp(path,"/")==0) {
+      if (read_inode(volume,EXT2_ROOT_INO,dest_inode) < 0) {
+          return 0; //ERROR with read_inode
+      } else {
+          return EXT2_ROOT_INO;
+      }
+  }
+
+  //char delim[] = "/";
+  //char *ptr = strtok(&path,delim);
+  //char *nextptr;
+  int len = strlen(path);
+  char *ptr = path + 1;
+  char *ptrend; // the end of current address till a "/"
+  int inode_no;
+  inode_t * curr_inode = malloc(sizeof(inode_t));
+  //printf ("DEBUG read Inode = %ld \n", read_inode(volume,EXT2_ROOT_INO,curr_inode));
+  if (read_inode(volume,EXT2_ROOT_INO,curr_inode) <0 ) {
+    return 0;
+  }
+  //printf("%s \n", ptr);
+
+  //while (ptr != NULL) {
+  while (ptr <= path+len - 1) {
+      //printf("DEBUG INSIDE WHILE LOOP \n");
+      //nextptr = strtok(NULL, delim); // test the next address
+
+      ptrend = strchr (ptr, "/"); // next "/"
+      
+      //if (nextptr == NULL){ // if this is the last address
+      if (ptrend == NULL ) {
+        inode_no = find_file_in_directory(volume,curr_inode, ptr, NULL); //TODO SHOULD IT BE NULL?
+        if (inode_no == 0) {
+            //printf("DEBUG ERROR with find_file_in_directory \n");
+            free(curr_inode);
+            return 0; // ERROR with find_file_in_directory
+        }
+        if (read_inode(volume,inode_no,dest_inode) < 0) {
+            //printf("DEBUG ERROR with read_inode \n");
+            free(curr_inode);
+            return 0; // ERROR with read_inode
+        }
+        free(curr_inode);
+        return inode_no;
+      } else { // what if it's not the last address yet?
+        int name_len = ptrend - ptr;
+        char * curr_name = malloc(sizeof(char) * (name_len+2));
+        strncpy(curr_name,ptr,name_len);
+        curr_name[name_len] = "\0";
+        if (find_file_in_directory(volume,curr_inode, curr_name, dest_inode) <= 0) {
+          free(curr_name);
+          free(curr_inode);
+          return 0;
+        }
+        if (read_inode(volume,inode_no,curr_inode ) < 0 ){
+          free(curr_inode);
+          free(curr_name);
+          return 0;
+        }
+        free(curr_name);
+      }
+
+      
+      // next iteration
+      ptr = ptrend + 1;
+  }
+
+
+  //printf("DEBUG END \n");
+  free(curr_inode);
+  return 0; // NEED TO REPLACE
 }

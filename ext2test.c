@@ -34,9 +34,9 @@ static int print_dir_entry_recursive(const char *name, uint32_t inode_no, void *
 }
 
 int main(int argc, char *argv[]) {
-  
+
   volume_t *volume;
-  
+
   if (argc != 2) {
     fprintf(stderr, "Usage: %s volume_file\n", argv[0]);
     return 1;
@@ -170,6 +170,8 @@ int main(int argc, char *argv[]) {
 
   printf("\nFull list of files:\n");
   print_dir_entry_recursive("", EXT2_ROOT_INO, volume);
-  
+
+  // TODO SEG FAULT HERE
+
   return 0;
 }
