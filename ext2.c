@@ -300,11 +300,11 @@ uint32_t follow_directory_entries(volume_t *volume, inode_t *inode, void *contex
 				  int (*f)(const char *name, uint32_t inode_no, void *context)) {
 
   /* TO BE COMPLETED BY THE STUDENT */
-
   int offset = 0;
   dir_entry_t * temp = malloc(sizeof(dir_entry_t));
   int f_output = 0;
   while (offset < inode_file_size(volume,inode) && f_output==0) {
+          printf("DEBUG INSIDE FOLLOW WHILE LOOP \n");
       if (read_file_content(volume,inode,offset, sizeof(dir_entry_t),temp) <0) {
           free(temp);
           return 0;
@@ -317,6 +317,7 @@ uint32_t follow_directory_entries(volume_t *volume, inode_t *inode, void *contex
       free(tempName);
       if (f_output != 0) {
           if (buffer!=NULL ) {
+              printf("DEBUG READY TO READ FILE CONTENT \n");
               read_file_content(volume,inode,offset, sizeof(dir_entry_t),temp);
           }
           int de_inode_no = temp->de_inode_no;
@@ -393,7 +394,6 @@ uint32_t find_file_from_path(volume_t *volume, const char *path, inode_t *dest_i
       if (read_inode(volume,EXT2_ROOT_INO,dest_inode) < 0) {
           return 0; //ERROR with read_inode
       } else {
-        printf("DEBUG: SUCCESSFULLY READ INODE FOR ROOT \n");
           return EXT2_ROOT_INO;
       }
   }
