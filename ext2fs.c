@@ -90,7 +90,22 @@ static void ext2_destroy(void *private_data) {
 static int ext2_getattr(const char *path, struct stat *stbuf) {
 
   /* TO BE COMPLETED BY THE STUDENT */
-  return -ENOSYS; // Function not implemented
+  memset(stbuf, 0, sizeof(struct stat));
+  inode_t inode;
+  stbuf->st_ino = find_file_from_path(volume, path, &inode);
+  if (stbuf->st_ino == 0)
+    return -ENOENT;
+  stbuf->st_uid = inode.i_uid;
+  stbuf->st_gid = inode.i_gid;
+  stbuf->st_blksize = volume->block_size;
+  stbuf->st_blocks = inode.i_blocks;
+  //stbuf->st_atim = inode.i_atime;
+  //stbuf->st_mtim = inode.i_mtime;
+  //stbuf->st_ctim = inode.i_ctime;
+  stbuf->st_mode = inode.i_mode;
+  stbuf->st_nlink = inode.i_links_count;
+  stbuf->st_size = inode.i_size;
+  return 0;
 }
 
 /* ext2_readdir: Function called when a process requests the listing
