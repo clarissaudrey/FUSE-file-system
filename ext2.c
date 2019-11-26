@@ -113,7 +113,7 @@ ssize_t read_block(volume_t *volume, uint32_t block_no, uint32_t offset, uint32_
     return -1;
   }
   uint32_t blockOffset = block_no * volume->block_size + offset;
-  printf ( "DEBUG blockOffset = %d \n", blockOffset);
+  //printf ( "DEBUG blockOffset = %d \n", blockOffset);
   return pread(volume->fd, buffer, size, blockOffset);
 }
 
@@ -144,9 +144,10 @@ ssize_t read_inode(volume_t *volume, uint32_t inode_no, inode_t *buffer) {
   uint32_t size = volume->super.s_inode_size;
   uint32_t offset = index * size;
   uint32_t block_no = volume->groups[blockGroup].bg_inode_table;
+  
+
   printf ( "DEBUG block_no = %d \n", block_no);
-  //printf("DEBUG inode_no = %d \n", inode_no);
-  printf("DEBUG blockGroup = %d \n", blockGroup);
+  //printf("DEBUG blockGroup = %d \n", blockGroup);
   //printf("DEBUG index = %d \n", index);
   //printf("DEBUG offset = %d \n", offset);
   //uint32_t containing_block = (index * volume->super.s_inode_size) / volume->block_size;
@@ -318,7 +319,7 @@ uint32_t follow_directory_entries(volume_t *volume, inode_t *inode, void *contex
   int offset = 0;
   dir_entry_t * temp = malloc(sizeof(dir_entry_t));
   int f_output = 0;
-  printf("DEBUG inode file size = %ld\n", inode_file_size(volume,inode));
+  //printf("DEBUG inode file size = %ld\n", inode_file_size(volume,inode));
   while (offset < inode_file_size(volume,inode) && f_output==0) {
          // printf("DEBUG INSIDE FOLLOW WHILE LOOP \n");
       if (read_file_content(volume,inode,offset, sizeof(dir_entry_t),temp) <0) {
@@ -333,7 +334,7 @@ uint32_t follow_directory_entries(volume_t *volume, inode_t *inode, void *contex
       free(tempName);
       if (f_output != 0) {
           if (buffer!=NULL ) {
-              printf("DEBUG READY TO READ FILE CONTENT \n");
+              //printf("DEBUG READY TO READ FILE CONTENT \n");
               read_file_content(volume,inode,offset, sizeof(dir_entry_t),temp);
           }
           int de_inode_no = temp->de_inode_no;
@@ -397,11 +398,11 @@ uint32_t find_file_in_directory(volume_t *volume, inode_t *inode, const char *na
 uint32_t find_file_from_path(volume_t *volume, const char *path, inode_t *dest_inode) {
 
   /* TO BE COMPLETED BY THE STUDENT */
-  printf("DEBUG AT THE BEGINING \n");
+  //printf("DEBUG AT THE BEGINING \n");
 
   // check if the path starts with "/"
   if (strncmp(path,"/",1)!=0){
-        printf("DEBUG not / \n");
+        //printf("DEBUG not / \n");
         return 0;
   }
 
@@ -430,7 +431,7 @@ uint32_t find_file_from_path(volume_t *volume, const char *path, inode_t *dest_i
 
   //while (ptr != NULL) {
   while (ptr <= path+len - 1) {
-      printf("DEBUG INSIDE WHILE LOOP \n");
+      //printf("DEBUG INSIDE WHILE LOOP \n");
       //nextptr = strtok(NULL, delim); // test the next address
 
       ptrend = strchr (ptr, "/"); // next "/"
@@ -439,12 +440,12 @@ uint32_t find_file_from_path(volume_t *volume, const char *path, inode_t *dest_i
       if (ptrend == NULL ) {
         inode_no = find_file_in_directory(volume,curr_inode, ptr, NULL); //TODO SHOULD IT BE NULL?
         if (inode_no == 0) {
-            printf("DEBUG ERROR with find_file_in_directory \n");
+            //printf("DEBUG ERROR with find_file_in_directory \n");
             free(curr_inode);
             return 0; // ERROR with find_file_in_directory
         }
         if (read_inode(volume,inode_no,dest_inode) < 0) {
-            printf("DEBUG ERROR with read_inode \n");
+            //printf("DEBUG ERROR with read_inode \n");
             free(curr_inode);
             return 0; // ERROR with read_inode
         }
@@ -474,7 +475,7 @@ uint32_t find_file_from_path(volume_t *volume, const char *path, inode_t *dest_i
   }
 
 
-  printf("DEBUG END \n");
+  //printf("DEBUG END \n");
   free(curr_inode);
   return 0; // NEED TO REPLACE
 }
