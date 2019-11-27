@@ -171,7 +171,6 @@ int main(int argc, char *argv[]) {
   printf("\nFull list of files:\n");
   print_dir_entry_recursive("", EXT2_ROOT_INO, volume);
 
-  // TODO SEG FAULT HERE
 
   return 0;
 }
