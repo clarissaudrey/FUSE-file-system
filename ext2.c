@@ -244,12 +244,13 @@ static uint32_t get_inode_block_no(volume_t *volume, inode_t *inode, uint64_t bl
 ssize_t read_file_block(volume_t *volume, inode_t *inode, uint64_t offset, uint64_t max_size, void *buffer) {
     
   /* TO BE COMPLETED BY THE STUDENT */
-  uint64_t size = volume->block_size - (offset % volume->block_size);
+  uint64_t block_offset= offset % volume->block_size;
+  uint64_t size = volume->block_size - block_offset;
   if (size > max_size) {
     size = max_size;
-  }
+  } 
   uint32_t block_no = get_inode_block_no(volume, inode, offset / volume->block_size);
-  return read_block(volume, block_no, offset % volume->block_size, size, buffer);
+  return read_block(volume, block_no, block_offset, size, buffer);
 }
 
 /* read_file_content: Returns the content of a specific file, limited
@@ -316,30 +317,37 @@ uint32_t follow_directory_entries(volume_t *volume, inode_t *inode, void *contex
 				  int (*f)(const char *name, uint32_t inode_no, void *context)) {
 
   /* TO BE COMPLETED BY THE STUDENT */
+
+  if (((inode->i_mode >> 12) & 0xf) != 0x4) return 0;
+
   int offset = 0;
   dir_entry_t * temp = malloc(sizeof(dir_entry_t));
   int f_output = 0;
+
   //printf("DEBUG inode file size = %ld\n", inode_file_size(volume,inode));
   while (offset < inode_file_size(volume,inode) && f_output==0) {
-         // printf("DEBUG INSIDE FOLLOW WHILE LOOP \n");
+      
       if (read_file_content(volume,inode,offset, sizeof(dir_entry_t),temp) <0) {
+        //printf("DEBUG read_file_content not successsful \n");
           free(temp);
           return 0;
       }
+      //printf("DEBUG offset = %d \n", offset);
+      
 
       char * tempName = malloc((temp->de_name_len + 2) * sizeof(char));
       strcpy(tempName, temp->de_name);
-      tempName[temp->de_name_len] = "\0";
-      f_output = (*f)(tempName,temp->de_inode_no,context);
+      tempName[temp->de_name_len] = '\0';
+      f_output = f(tempName,temp->de_inode_no,context);
       free(tempName);
       if (f_output != 0) {
           if (buffer!=NULL ) {
               //printf("DEBUG READY TO READ FILE CONTENT \n");
-              read_file_content(volume,inode,offset, sizeof(dir_entry_t),temp);
+              read_file_content(volume,inode,offset, sizeof(dir_entry_t),buffer);
           }
-          int de_inode_no = temp->de_inode_no;
+          int dir_inode_no = temp->de_inode_no;
           free(temp);
-          return de_inode_no;
+          return dir_inode_no;
       }
       offset += temp->de_rec_len;
   }
@@ -419,8 +427,8 @@ uint32_t find_file_from_path(volume_t *volume, const char *path, inode_t *dest_i
   //char *ptr = strtok(&path,delim);
   //char *nextptr;
   int len = strlen(path);
-  char *ptr = path + 1;
-  char *ptrend; // the end of current address till a "/"
+  const char * ptr = path + 1;
+  char * ptrend; // the end of current address till a "/"
   int inode_no;
   inode_t * curr_inode = malloc(sizeof(inode_t));
   //printf ("DEBUG read Inode = %ld \n", read_inode(volume,EXT2_ROOT_INO,curr_inode));
@@ -430,17 +438,20 @@ uint32_t find_file_from_path(volume_t *volume, const char *path, inode_t *dest_i
   //printf("%s \n", ptr);
 
   //while (ptr != NULL) {
-  while (ptr <= path+len - 1) {
+  while (ptr <= (path+len - 1)) {
       //printf("DEBUG INSIDE WHILE LOOP \n");
       //nextptr = strtok(NULL, delim); // test the next address
 
-      ptrend = strchr (ptr, "/"); // next "/"
+      const char ch = '/';
+      ptrend = strchr (ptr, ch); // next "/"
       
+      //dir_entry_t * dir_ptr = malloc(sizeof(dir_entry_t));
+      inode_no = find_file_in_directory(volume,curr_inode, ptr, NULL); //TODO SHOULD IT BE NULL?
       //if (nextptr == NULL){ // if this is the last address
       if (ptrend == NULL ) {
-        inode_no = find_file_in_directory(volume,curr_inode, ptr, NULL); //TODO SHOULD IT BE NULL?
+        
         if (inode_no == 0) {
-            //printf("DEBUG ERROR with find_file_in_directory \n");
+            printf("DEBUG ERROR with find_file_in_directory \n");
             free(curr_inode);
             return 0; // ERROR with find_file_in_directory
         }
@@ -455,8 +466,8 @@ uint32_t find_file_from_path(volume_t *volume, const char *path, inode_t *dest_i
         int name_len = ptrend - ptr;
         char * curr_name = malloc(sizeof(char) * (name_len+2));
         strncpy(curr_name,ptr,name_len);
-        curr_name[name_len] = "\0";
-        if (find_file_in_directory(volume,curr_inode, curr_name, dest_inode) <= 0) {
+        curr_name[name_len] = '\0';
+        if (find_file_in_directory(volume,curr_inode, curr_name, NULL) <= 0) {
           free(curr_name);
           free(curr_inode);
           return 0;
